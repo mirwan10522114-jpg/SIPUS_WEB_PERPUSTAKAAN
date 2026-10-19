@@ -1,0 +1,219 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "SIPUS API — Sistem Informasi Perpustakaan Sekolah",
+    "description": "REST API SIPUS. Autentikasi menggunakan Bearer token JWT (login → accessToken). Semua respons berbentuk { success, data?, meta?, message? }.",
+    "version": "1.0.0"
+  },
+  "servers": [{ "url": "/", "description": "Server ini" }],
+  "tags": [
+    { "name": "Auth", "description": "Autentikasi & akun" },
+    { "name": "Books", "description": "Katalog buku, kategori & eksemplar" },
+    { "name": "Members", "description": "Manajemen anggota" },
+    { "name": "Loans", "description": "Sirkulasi peminjaman & pengembalian" },
+    { "name": "Reservations", "description": "Reservasi buku" },
+    { "name": "Fines", "description": "Denda keterlambatan" },
+    { "name": "Notifications", "description": "Notifikasi in-app" },
+    { "name": "Announcements", "description": "Pengumuman perpustakaan" },
+    { "name": "Reports", "description": "Laporan & statistik" },
+    { "name": "Dashboard", "description": "Ringkasan admin" },
+    { "name": "Settings", "description": "Konfigurasi sistem" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" },
+          "data": {},
+          "meta": { "type": "object" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["identifier", "password"],
+        "properties": {
+          "identifier": { "type": "string", "example": "2026001", "description": "NIS (siswa) / NIP (guru & admin)" },
+          "password": { "type": "string" }
+        }
+      },
+      "Book": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "isbn": { "type": "string" },
+          "title": { "type": "string" },
+          "author": { "type": "string" },
+          "publisher": { "type": "string" },
+          "publishYear": { "type": "integer" },
+          "categoryId": { "type": "integer" },
+          "description": { "type": "string" },
+          "coverImageUrl": { "type": "string" },
+          "availableCopies": { "type": "integer" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"], "summary": "Login (NIS/NIP + password)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+        "responses": { "200": { "description": "Sukses — accessToken, refreshToken & user" }, "401": { "description": "Kredensial salah" }, "429": { "description": "Terlalu banyak percobaan (rate limit)" } }
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": ["Auth"], "summary": "Perbarui access token",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["refreshToken"], "properties": { "refreshToken": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "Token baru" } }
+      }
+    },
+    "/api/auth/me": {
+      "get": { "tags": ["Auth"], "summary": "Profil user saat ini", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/auth/me/password": {
+      "put": { "tags": ["Auth"], "summary": "Ubah password sendiri", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/books": {
+      "get": {
+        "tags": ["Books"], "summary": "Cari & list buku (publik)",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Cari judul/penulis/ISBN/penerbit" },
+          { "name": "categoryId", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["available", "unavailable"] } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["newest", "title", "year"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 12 } }
+        ],
+        "responses": { "200": { "description": "Daftar buku + pagination" } }
+      },
+      "post": {
+        "tags": ["Books"], "summary": "Tambah buku (admin)", "security": [{ "bearerAuth": [] }],
+        "responses": { "201": { "description": "Dibuat" }, "403": { "description": "Bukan admin" } }
+      }
+    },
+    "/api/books/{id}": {
+      "get": { "tags": ["Books"], "summary": "Detail buku + daftar eksemplar (publik)", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" }, "404": { "description": "Tidak ditemukan" } } },
+      "put": { "tags": ["Books"], "summary": "Edit buku (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["Books"], "summary": "Hapus buku (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" }, "409": { "description": "Masih ada eksemplar dipinjam" } } }
+    },
+    "/api/books/{id}/copies": {
+      "post": { "tags": ["Books"], "summary": "Tambah eksemplar (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "201": { "description": "OK" } } }
+    },
+    "/api/books/copies/lookup/{code}": {
+      "get": { "tags": ["Books"], "summary": "Scan/lookup barcode eksemplar (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "code", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Eksemplar + pinjaman aktif (jika ada)" }, "404": { "description": "Kode tidak ditemukan" } } }
+    },
+    "/api/books/copies/{id}": {
+      "put": { "tags": ["Books"], "summary": "Edit eksemplar (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["Books"], "summary": "Hapus eksemplar (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/categories": {
+      "get": { "tags": ["Books"], "summary": "List kategori (publik)", "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Books"], "summary": "Tambah kategori (admin)", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "OK" } } }
+    },
+    "/api/categories/{id}": {
+      "put": { "tags": ["Books"], "summary": "Edit kategori (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["Books"], "summary": "Hapus kategori (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" }, "409": { "description": "Kategori masih dipakai" } } }
+    },
+    "/api/members": {
+      "get": { "tags": ["Members"], "summary": "List anggota (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }, { "name": "role", "in": "query", "schema": { "type": "string", "enum": ["siswa", "guru", "admin", "all"] } }, { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "inactive", "all"] } }], "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Members"], "summary": "Tambah anggota (admin)", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "OK" }, "409": { "description": "NIS/NIP duplikat" } } }
+    },
+    "/api/members/{id}": {
+      "put": { "tags": ["Members"], "summary": "Edit anggota (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["Members"], "summary": "Nonaktifkan anggota (admin, soft-delete)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/members/{id}/reset-password": {
+      "put": { "tags": ["Members"], "summary": "Reset password anggota (admin, FR-04)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/members/import": {
+      "post": { "tags": ["Members"], "summary": "Import massal anggota via CSV/XLSX (FR-15)", "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" } } } } } }, "responses": { "200": { "description": "Hasil import (created/updated/errors)" } } }
+    },
+    "/api/loans": {
+      "get": { "tags": ["Loans"], "summary": "List semua peminjaman (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "borrowed", "overdue", "returned", "lost", "all"] } }, { "name": "q", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Loans"], "summary": "Catat peminjaman baru (admin, FR-16..18)", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "userIdentifier": { "type": "string", "example": "2026001" }, "copyCode": { "type": "string", "example": "SIP-2026-0001" }, "loanDays": { "type": "integer" } } } } } }, "responses": { "201": { "description": "Loan dibuat, due_date otomatis" }, "403": { "description": "Denda belum lunas / kuota tercapai" }, "409": { "description": "Eksemplar tidak tersedia" } } }
+    },
+    "/api/loans/me": {
+      "get": { "tags": ["Loans"], "summary": "Riwayat peminjaman milik sendiri", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/loans/return-by-code": {
+      "put": { "tags": ["Loans"], "summary": "Pengembalian via scan barcode (admin)", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["copyCode"], "properties": { "copyCode": { "type": "string" } } } } } }, "responses": { "200": { "description": "OK — berisi fine jika terlambat" } } }
+    },
+    "/api/loans/{id}/return": {
+      "put": { "tags": ["Loans"], "summary": "Pengembalian via ID loan (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reservations": {
+      "get": { "tags": ["Reservations"], "summary": "Semua reservasi (admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Reservations"], "summary": "Buat reservasi (anggota, FR-21)", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "OK" }, "409": { "description": "Buku masih tersedia / reservasi duplikat" } } }
+    },
+    "/api/reservations/me": {
+      "get": { "tags": ["Reservations"], "summary": "Reservasi milik sendiri", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reservations/{id}/cancel": {
+      "put": { "tags": ["Reservations"], "summary": "Batalkan reservasi", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/fines": {
+      "get": { "tags": ["Fines"], "summary": "List denda (admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK + total unpaid di meta" } } }
+    },
+    "/api/fines/me": {
+      "get": { "tags": ["Fines"], "summary": "Denda milik sendiri (FR-26)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/fines/{id}/pay": {
+      "put": { "tags": ["Fines"], "summary": "Tandai denda lunas (admin, FR-25)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" }, "409": { "description": "Sudah lunas" } } }
+    },
+    "/api/notifications/me": {
+      "get": { "tags": ["Notifications"], "summary": "Notifikasi milik sendiri", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/notifications/{id}/read": {
+      "put": { "tags": ["Notifications"], "summary": "Tandai notifikasi terbaca", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/notifications/read-all": {
+      "put": { "tags": ["Notifications"], "summary": "Tandai semua terbaca", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/announcements": {
+      "get": { "tags": ["Announcements"], "summary": "Pengumuman aktif (publik, FR-32)", "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10 } }], "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Announcements"], "summary": "Buat pengumuman (admin, FR-31)", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "OK" } } }
+    },
+    "/api/announcements/admin/all": {
+      "get": { "tags": ["Announcements"], "summary": "Semua pengumuman (admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/announcements/{id}": {
+      "put": { "tags": ["Announcements"], "summary": "Edit pengumuman (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } },
+      "delete": { "tags": ["Announcements"], "summary": "Hapus pengumuman (admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reports/popular-books": {
+      "get": { "tags": ["Reports"], "summary": "Laporan buku terpopuler (FR-27)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "period", "in": "query", "schema": { "type": "string", "enum": ["month", "90d"] } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reports/overdue": {
+      "get": { "tags": ["Reports"], "summary": "Laporan keterlambatan (FR-28)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reports/transactions": {
+      "get": { "tags": ["Reports"], "summary": "Transaksi per periode (FR-29)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "period", "in": "query", "schema": { "type": "string", "enum": ["day", "month"] } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/reports/export": {
+      "get": { "tags": ["Reports"], "summary": "Export laporan Excel (FR-30)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "type", "in": "query", "schema": { "type": "string", "enum": ["popular", "overdue", "transactions"] } }, { "name": "period", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "File .xlsx", "content": { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {} } } } }
+    },
+    "/api/dashboard/stats": {
+      "get": { "tags": ["Dashboard"], "summary": "Ringkasan statistik admin", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/settings": {
+      "get": { "tags": ["Settings"], "summary": "Lihat pengaturan (admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } },
+      "put": { "tags": ["Settings"], "summary": "Ubah pengaturan (super_admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/accounts": {
+      "get": { "tags": ["Settings"], "summary": "List akun admin (super_admin)", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "OK" } } },
+      "post": { "tags": ["Settings"], "summary": "Buat akun admin (super_admin)", "security": [{ "bearerAuth": [] }], "responses": { "201": { "description": "OK" } } }
+    },
+    "/api/accounts/{id}/toggle": {
+      "put": { "tags": ["Settings"], "summary": "Aktif/nonaktifkan akun admin (super_admin)", "security": [{ "bearerAuth": [] }], "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/uploads": {
+      "post": { "tags": ["Books"], "summary": "Unggah cover buku (admin, FR-10)", "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "multipart/form-data": { "schema": { "type": "object", "properties": { "file": { "type": "string", "format": "binary" } } } } } }, "responses": { "200": { "description": "URL gambar" } } }
+    }
+  }
+}

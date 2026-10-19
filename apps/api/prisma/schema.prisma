@@ -1,0 +1,225 @@
+// SIPUS — Sistem Informasi Perpustakaan Sekolah
+// Skema database sesuai PRD §11 (+ settings & notifications)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  siswa
+  guru
+  admin
+  super_admin
+}
+
+enum CopyStatus {
+  available
+  borrowed
+  lost
+  damaged
+  maintenance
+}
+
+enum LoanStatus {
+  borrowed
+  returned
+  overdue
+  lost
+}
+
+enum ReservationStatus {
+  waiting
+  ready
+  fulfilled
+  cancelled
+  expired
+}
+
+enum FineStatus {
+  unpaid
+  paid
+}
+
+model User {
+  id               Int       @id @default(autoincrement())
+  identifier       String    @unique
+  name             String
+  email            String?   @unique
+  passwordHash     String    @map("password_hash")
+  role             Role      @default(siswa)
+  classOrPosition  String?   @map("class_or_position")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  loansProcessed      Loan[]            @relation("LoanProcessor")
+  loansBorrowed       Loan[]            @relation("LoanBorrower")
+  reservations        Reservation[]
+  finesRecorded       Fine[]            @relation("FineRecorder")
+  notifications       Notification[]
+  announcements       Announcement[]    @relation("AnnouncementPublisher")
+  activityLogs        ActivityLog[]
+
+  @@map("users")
+}
+
+model Category {
+  id          Int     @id @default(autoincrement())
+  name        String  @unique
+  description String? @db.Text
+
+  books Book[]
+
+  @@map("categories")
+}
+
+model Book {
+  id            Int      @id @default(autoincrement())
+  isbn          String?
+  title         String
+  author        String
+  publisher     String?
+  publishYear   Int?     @map("publish_year")
+  categoryId    Int?     @map("category_id")
+  description   String?  @db.Text
+  coverImageUrl String?  @map("cover_image_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  category     Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  copies       BookCopy[]
+  reservations Reservation[]
+
+  @@index([title])
+  @@index([author])
+  @@index([isbn])
+  @@map("books")
+}
+
+model BookCopy {
+  id            Int        @id @default(autoincrement())
+  bookId        Int        @map("book_id")
+  inventoryCode String     @unique @map("inventory_code")
+  shelfLocation String?    @map("shelf_location")
+  status        CopyStatus @default(available)
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  book  Book   @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  loans Loan[]
+
+  @@index([bookId])
+  @@index([status])
+  @@map("book_copies")
+}
+
+model Loan {
+  id         Int        @id @default(autoincrement())
+  userId     Int        @map("user_id")
+  bookCopyId Int        @map("book_copy_id")
+  loanDate   DateTime   @default(now()) @map("loan_date")
+  dueDate    DateTime   @map("due_date")
+  returnDate DateTime?  @map("return_date")
+  status     LoanStatus @default(borrowed)
+  processedBy Int?      @map("processed_by")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  user      User     @relation("LoanBorrower", fields: [userId], references: [id])
+  processed User?    @relation("LoanProcessor", fields: [processedBy], references: [id])
+  bookCopy  BookCopy @relation(fields: [bookCopyId], references: [id])
+  fines     Fine[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("loans")
+}
+
+model Reservation {
+  id              Int               @id @default(autoincrement())
+  userId          Int               @map("user_id")
+  bookId          Int               @map("book_id")
+  reservationDate DateTime          @default(now()) @map("reservation_date")
+  readyUntil      DateTime?         @map("ready_until")
+  status          ReservationStatus @default(waiting)
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([bookId])
+  @@index([status])
+  @@map("reservations")
+}
+
+model Fine {
+  id        Int        @id @default(autoincrement())
+  loanId    Int        @map("loan_id")
+  amount    Decimal    @db.Decimal(12, 2)
+  reason    String
+  status    FineStatus @default(unpaid)
+  paidAt    DateTime?  @map("paid_at")
+  paidBy    Int?       @map("paid_by")
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  loan   Loan  @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  paidByUser User? @relation("FineRecorder", fields: [paidBy], references: [id])
+
+  @@index([loanId])
+  @@index([status])
+  @@map("fines")
+}
+
+model Announcement {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String   @db.Text
+  publishedBy Int?     @map("published_by")
+  publishedAt DateTime @default(now()) @map("published_at")
+  isActive    Boolean  @default(true) @map("is_active")
+
+  publisher User? @relation("AnnouncementPublisher", fields: [publishedBy], references: [id])
+
+  @@map("announcements")
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int?     @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   Int?     @map("entity_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("activity_logs")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  title     String
+  message   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
